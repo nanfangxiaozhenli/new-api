@@ -3,6 +3,7 @@ package router
 import (
 	"github.com/QuantumNous/new-api/controller"
 	"github.com/QuantumNous/new-api/middleware"
+	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service/authz"
 
 	// Import oauth package to register providers via init()
@@ -26,6 +27,23 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/status", controller.GetStatus)
 		apiRouter.GET("/uptime/status", controller.GetUptimeKumaStatus)
 		apiRouter.GET("/models", middleware.UserAuth(), controller.DashboardListModels)
+		apiRouter.GET("/user/auth/canvas/start", middleware.DisableCache(), controller.CanvasAuthorizationStart)
+		apiRouter.GET("/user/auth/canvas/authorize", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.CanvasAuthorize)
+		apiRouter.POST("/internal/integrations/canvas/v1/auth/exchange", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.CanvasExchange)
+		apiRouter.GET("/internal/integrations/canvas/v1/users/:subject/wallet", middleware.DisableCache(), controller.CanvasWallet)
+		apiRouter.GET("/internal/integrations/canvas/v1/catalog", middleware.DisableCache(), controller.CanvasCatalog)
+		apiRouter.GET("/internal/integrations/canvas/v1/catalog/offerings/:offeringId", middleware.DisableCache(), controller.CanvasCatalogOffering)
+		apiRouter.POST("/internal/integrations/canvas/v1/catalog/refresh", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.CanvasCatalogRefresh)
+		apiRouter.POST("/internal/integrations/canvas/v1/relay/authorizations", middleware.CriticalRateLimit(), middleware.DisableCache(), controller.CanvasRelayAuthorize)
+		apiRouter.GET("/internal/integrations/canvas/v1/relay/authorizations/:id", middleware.DisableCache(), controller.CanvasRelayStatus)
+		apiRouter.POST("/internal/integrations/canvas/v1/relay/authorizations/:id/tasks/:key",
+			middleware.CriticalRateLimit(), middleware.DisableCache(), controller.CanvasRelayClaim,
+			middleware.TokenAuth(), middleware.PrepareTaskPluginSubmit(), controller.CanvasRelayModel,
+			middleware.ModelRequestRateLimit(), middleware.Distribute(), controller.RelayTask)
+		apiRouter.POST("/internal/integrations/canvas/v1/relay/authorizations/:id/image/:key",
+			middleware.CriticalRateLimit(), middleware.DisableCache(), controller.CanvasRelayClaim,
+			middleware.TokenAuth(), controller.CanvasRelayModel,
+			middleware.ModelRequestRateLimit(), middleware.Distribute(), func(c *gin.Context) { controller.Relay(c, types.RelayFormatOpenAIImage) })
 		apiRouter.GET("/status/test", middleware.AdminAuth(), controller.TestStatus)
 		apiRouter.GET("/notice", controller.GetNotice)
 		apiRouter.GET("/user-agreement", controller.GetUserAgreement)

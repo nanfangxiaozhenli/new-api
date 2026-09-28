@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -464,7 +465,7 @@ func executeTaskSubmissionWith(
 	durable := false
 	stage := "start"
 	defer func() {
-		if !durable && relayInfo.Billing != nil {
+		if !durable && relayInfo.Billing != nil && (c.GetInt("canvas_relay_token_id") == 0 || !c.GetBool("canvas_relay_attempted")) {
 			diagnostics.refund(stage)
 			relayInfo.Billing.Refund(c)
 		}
@@ -483,7 +484,11 @@ func executeTaskSubmissionWith(
 		Retry:       common.GetPointer(0),
 	}
 
-	for ; retryParam.GetRetry() <= common.RetryTimes; retryParam.IncreaseRetry() {
+	retryLimit := common.RetryTimes
+	if c.GetInt("canvas_relay_token_id") != 0 {
+		retryLimit = 0
+	}
+	for ; retryParam.GetRetry() <= retryLimit; retryParam.IncreaseRetry() {
 		stage = "select_channel"
 		if requestErr := c.Request.Context().Err(); requestErr != nil {
 			diagnostics.cancelled("before_attempt", retryParam.GetRetry()+1)
@@ -525,7 +530,20 @@ func executeTaskSubmissionWith(
 		c.Request.Body = io.NopCloser(bodyStorage)
 
 		stage = "submit"
+		if c.GetInt("canvas_relay_token_id") != 0 {
+			c.Set("canvas_relay_attempted", true)
+		}
 		result, taskErr = submit(c, relayInfo)
+		if c.GetInt("canvas_relay_token_id") != 0 && result != nil {
+			if recordErr := model.RecordCanvasUpstreamTask(c.GetInt("canvas_relay_token_id"), result.UpstreamTaskID); recordErr != nil {
+				common.SysError("record canvas upstream task failed: " + recordErr.Error())
+			}
+			if taskErr == nil {
+				persistCtx, cancel := context.WithTimeout(context.WithoutCancel(c.Request.Context()), 10*time.Second)
+				defer cancel()
+				c.Request = c.Request.WithContext(persistCtx)
+			}
+		}
 		if requestErr := c.Request.Context().Err(); requestErr != nil {
 			diagnostics.cancelled("after_submit", retryParam.GetRetry()+1)
 			taskErr = service.TaskErrorWrapperLocal(requestErr, "request_cancelled", http.StatusRequestTimeout)
@@ -544,7 +562,7 @@ func executeTaskSubmissionWith(
 				relayInfo)
 		}
 
-		willRetry := shouldRetryTaskRelay(c, channel.Id, taskErr, common.RetryTimes-retryParam.GetRetry())
+		willRetry := shouldRetryTaskRelay(c, channel.Id, taskErr, retryLimit-retryParam.GetRetry())
 		diagnostics.attemptFailed(retryParam.GetRetry()+1, channel, taskErr, willRetry)
 		if !willRetry {
 			break
@@ -629,7 +647,15 @@ func executeTaskSubmissionWith(
 		}
 	}
 	diagnostics.insertStart(task)
-	if insertErr := task.InsertWithContext(c.Request.Context()); insertErr != nil {
+	var insertErr error
+	if tokenID := c.GetInt("canvas_relay_token_id"); tokenID != 0 {
+		persistCtx, cancel := context.WithTimeout(context.WithoutCancel(c.Request.Context()), 10*time.Second)
+		insertErr = model.InsertCanvasRelayTask(persistCtx, tokenID, task)
+		cancel()
+	} else {
+		insertErr = task.InsertWithContext(c.Request.Context())
+	}
+	if insertErr != nil {
 		common.SysError("insert task error: " + insertErr.Error())
 		taskErr = service.TaskErrorWrapperLocal(errors.New("failed to persist task"), "task_insert_failed", http.StatusInternalServerError)
 		diagnostics.failed("insert", "database_error", taskErr, false)

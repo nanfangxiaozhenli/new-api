@@ -960,6 +960,17 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 	}
 
 	channel.UpdateResponseTime(milliseconds)
+	healthStatus := "healthy"
+	errorCode := ""
+	if newAPIError != nil {
+		healthStatus = "unhealthy"
+		errorCode = string(newAPIError.GetErrorCode())
+	} else if milliseconds >= 3000 {
+		healthStatus = "degraded"
+	}
+	if err := model.RecordCanvasChannelHealth(channel.Id, time.Now().UTC(), healthStatus, int(milliseconds), errorCode); err != nil {
+		common.SysLog(fmt.Sprintf("failed to record canvas channel health: channel_id=%d, error=%v", channel.Id, err))
+	}
 	return summary
 }
 

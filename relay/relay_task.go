@@ -396,6 +396,12 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 	}
 
 	info.PriceData.Quota = finalQuota
+	bounded, boundErr := model.CanvasRelayBoundedQuota(info.TokenId, finalQuota)
+	if boundErr != nil {
+		return nil, service.TaskErrorWrapperLocal(boundErr, "task_quota_limit_unavailable", http.StatusServiceUnavailable)
+	}
+	finalQuota = bounded
+	info.PriceData.Quota = bounded
 
 	return &TaskSubmitResult{
 		UpstreamTaskID: parsed.UpstreamTaskID,

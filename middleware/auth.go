@@ -320,6 +320,10 @@ func TokenAuthReadOnly() func(c *gin.Context) {
 			c.Abort()
 			return
 		}
+		if token.CanvasRelayOnly {
+			c.AbortWithStatus(http.StatusForbidden)
+			return
+		}
 
 		// TokenAuthReadOnly must keep allowing other token states to query read-only
 		// data, such as token usage logs; only explicitly disabled tokens are denied.
@@ -419,6 +423,17 @@ func TokenAuth() func(c *gin.Context) {
 					common.TranslateMessage(c, i18n.MsgTokenInvalid))
 			}
 			return
+		}
+		if token.CanvasRelayOnly {
+			allowed, scopeErr := model.CheckCanvasRelayTokenAccess(token.Id, c.GetInt("canvas_relay_token_id"), c.Request.URL.Path)
+			if scopeErr != nil {
+				abortWithOpenAiMessage(c, http.StatusInternalServerError, common.TranslateMessage(c, i18n.MsgDatabaseError))
+				return
+			}
+			if !allowed {
+				abortWithOpenAiMessage(c, http.StatusForbidden, common.TranslateMessage(c, i18n.MsgTokenInvalid))
+				return
+			}
 		}
 
 		allowIps := token.GetIpLimits()

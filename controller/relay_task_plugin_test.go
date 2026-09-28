@@ -357,6 +357,44 @@ func TestExecuteTaskSubmissionDisconnectAfterDurableInsertDoesNotRefund(t *testi
 	assert.False(t, c.Writer.Written())
 }
 
+func TestCanvasRelayAcceptedSubmissionPersistsAfterClientDisconnect(t *testing.T) {
+	events := make([]string, 0, 3)
+	database := setupTaskSubmissionDatabase(t, true, &events)
+	require.NoError(t, database.AutoMigrate(&model.CanvasRelayDelegation{}))
+	require.NoError(t, database.Create(&model.CanvasRelayDelegation{
+		ID: "canvas-accepted", ClientID: "canvas", IdempotencyKey: "accepted-request-0001",
+		ClientTaskID: "accepted-task-0001", UserID: 1, TokenID: 25,
+		PluginKey: "video", Model: "plugin-model", PayloadSHA256: "unused", MaxQuota: 100,
+		ExpiresAt: time.Now().Add(time.Minute), State: model.CanvasRelayUnknown,
+	}).Error)
+	events = events[:0]
+	previousLogConsumeEnabled := common.LogConsumeEnabled
+	common.LogConsumeEnabled = false
+	t.Cleanup(func() { common.LogConsumeEnabled = previousLogConsumeEnabled })
+	c := taskSubmissionTestContext()
+	c.Set("canvas_relay_token_id", 25)
+	requestContext, cancel := context.WithCancel(c.Request.Context())
+	c.Request = c.Request.WithContext(requestContext)
+	billing := &taskSubmissionTestBilling{events: &events}
+	info := taskSubmissionRelayInfo(billing)
+	info.TokenId = 25
+
+	outcome, taskErr := executeTaskSubmissionWith(c, info, func(*gin.Context, *relaycommon.RelayInfo) (*relay.TaskSubmitResult, *dto.TaskError) {
+		cancel()
+		return &relay.TaskSubmitResult{UpstreamTaskID: "accepted-upstream", Platform: constant.TaskPlatform("plugin")}, nil
+	})
+
+	require.Nil(t, taskErr)
+	require.NotNil(t, outcome)
+	require.Equal(t, []string{"reserve", "insert", "settle"}, events)
+	require.Zero(t, billing.refunds)
+	stored, err := model.GetCanvasRelayDelegation("canvas", "canvas-accepted")
+	require.NoError(t, err)
+	require.Equal(t, model.CanvasRelaySubmitted, stored.State)
+	require.Equal(t, "task_public", stored.NativeTaskID)
+	require.Equal(t, "accepted-upstream", stored.UpstreamTaskID)
+}
+
 func setupTaskSubmissionDatabase(t *testing.T, migrate bool, events *[]string) *gorm.DB {
 	t.Helper()
 	previousDB := model.DB

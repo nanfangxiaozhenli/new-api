@@ -22,6 +22,7 @@ type Token struct {
 	ExpiredTime        int64          `json:"expired_time" gorm:"bigint;default:-1"` // -1 means never expired
 	RemainQuota        int            `json:"remain_quota" gorm:"default:0"`
 	UnlimitedQuota     bool           `json:"unlimited_quota"`
+	CanvasRelayOnly    bool           `json:"-" gorm:"not null;default:false"`
 	ModelLimitsEnabled bool           `json:"model_limits_enabled"`
 	ModelLimits        string         `json:"model_limits" gorm:"type:text"`
 	AllowIps           *string        `json:"allow_ips" gorm:"default:''"`
@@ -472,8 +473,7 @@ func BatchDeleteTokens(ids []int, userId int) (int, error) {
 
 func GetTokenKeysByIds(ids []int, userId int) ([]Token, error) {
 	var tokens []Token
-	err := DB.Select("id", commonKeyCol).
-		Where("user_id = ? AND id IN (?)", userId, ids).
+	err := DB.Where("user_id = ? AND id IN (?)", userId, ids).
 		Find(&tokens).Error
 	return tokens, err
 }

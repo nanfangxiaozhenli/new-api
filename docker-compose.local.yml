@@ -1,0 +1,25 @@
+services:
+  new-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: new-api-local:source
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      TZ: Asia/Shanghai
+      SQLITE_PATH: /data/new-api.db
+    volumes:
+      - local_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:3000/api/status | grep -Eq '\"success\"[[:space:]]*:[[:space:]]*true'"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  local_data:

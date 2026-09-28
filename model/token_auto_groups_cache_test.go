@@ -28,6 +28,15 @@ func TestTokenAutoGroupsRoundTripThroughRedisHashCache(t *testing.T) {
 	assert.Equal(t, []string{"vip", "default"}, groups)
 }
 
+func TestCanvasRelayTokenScopeSurvivesRedisCache(t *testing.T) {
+	useUserCacheMiniRedis(t)
+	token := Token{Id: 43, UserId: 7, Key: "canvas-relay-cache-key", CanvasRelayOnly: true}
+	require.NoError(t, cacheSetTokenForTest(token))
+	cached, err := cacheGetTokenByKey(token.Key)
+	require.NoError(t, err)
+	require.True(t, cached.CanvasRelayOnly)
+}
+
 func TestTokenUpdateSynchronouslyNarrowsPreheatedAutoGroupsCache(t *testing.T) {
 	truncateTables(t)
 	useUserCacheMiniRedis(t)

@@ -121,7 +121,9 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 				return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
 			}
 		}
-		logger.LogDebug(c, "image request body: %s", jsonData)
+		if c.GetInt("canvas_relay_token_id") == 0 {
+			logger.LogDebug(c, "image request body: %s", jsonData)
+		}
 		body, closer, err := relaycommon.NewOutboundJSONBody(jsonData)
 		if err != nil {
 			return types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
@@ -134,6 +136,9 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 	}
 
 	statusCodeMappingStr := c.GetString("status_code_mapping")
+	if c.GetInt("canvas_relay_token_id") != 0 {
+		c.Set("canvas_relay_attempted", true)
+	}
 
 	resp, err := adaptor.DoRequest(c, info, requestBody)
 	if err != nil {

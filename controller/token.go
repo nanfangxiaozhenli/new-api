@@ -197,6 +197,10 @@ func GetTokenKey(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	if token.CanvasRelayOnly {
+		c.AbortWithStatus(http.StatusForbidden)
+		return
+	}
 	params := tokenAuditParams(c)
 	params["id"], params["name"] = token.Id, token.Name
 	common.SetContextKey(c, constant.ContextKeyTokenAuditSucceeded, true)
@@ -366,6 +370,10 @@ func DeleteToken(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	if token.CanvasRelayOnly {
+		c.AbortWithStatus(http.StatusForbidden)
+		return
+	}
 	params := tokenAuditParams(c)
 	params["id"], params["name"] = token.Id, token.Name
 	err = token.Delete()
@@ -412,6 +420,10 @@ func UpdateToken(c *gin.Context) {
 	cleanToken, err := model.GetTokenByIds(token.Id, userId)
 	if err != nil {
 		common.ApiError(c, err)
+		return
+	}
+	if cleanToken.CanvasRelayOnly {
+		c.AbortWithStatus(http.StatusForbidden)
 		return
 	}
 	params["name"] = cleanToken.Name
@@ -504,6 +516,17 @@ func DeleteTokenBatch(c *gin.Context) {
 		return
 	}
 	userId := c.GetInt("id")
+	for _, id := range tokenBatch.Ids {
+		token, lookupErr := model.GetTokenByIds(id, userId)
+		if lookupErr != nil {
+			common.ApiError(c, lookupErr)
+			return
+		}
+		if token.CanvasRelayOnly {
+			c.AbortWithStatus(http.StatusForbidden)
+			return
+		}
+	}
 	count, err := model.BatchDeleteTokens(tokenBatch.Ids, userId)
 	if err != nil {
 		common.ApiError(c, err)
@@ -542,6 +565,10 @@ func GetTokenKeysBatch(c *gin.Context) {
 	keysMap := make(map[int]string)
 	returnedIDs := make([]int, 0, len(tokens))
 	for _, t := range tokens {
+		if t.CanvasRelayOnly {
+			c.AbortWithStatus(http.StatusForbidden)
+			return
+		}
 		keysMap[t.Id] = t.GetFullKey()
 		returnedIDs = append(returnedIDs, t.Id)
 	}

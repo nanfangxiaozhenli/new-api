@@ -43,6 +43,11 @@ type BillingSession struct {
 func (s *BillingSession) Settle(actualQuota int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	bounded, err := model.CanvasRelayBoundedQuota(s.relayInfo.TokenId, actualQuota)
+	if err != nil {
+		return err
+	}
+	actualQuota = bounded
 	if s.settled {
 		return nil
 	}
@@ -152,6 +157,9 @@ func (s *BillingSession) GetPreConsumedQuota() int {
 }
 
 func (s *BillingSession) Reserve(targetQuota int) error {
+	if err := model.CanvasRelayRequestQuota(s.relayInfo.TokenId, targetQuota); err != nil {
+		return err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

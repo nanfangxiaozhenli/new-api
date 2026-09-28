@@ -262,6 +262,12 @@ func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) bool 
 // reason 用于日志记录（例如 "token重算" 或 "adaptor调整"）。
 // clamps 可选：若计算 actualQuota 时发生额度饱和，将其记入日志 admin_info（仅管理员可见）。
 func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int, reason string, clamps ...*common.QuotaClamp) {
+	bounded, err := model.CanvasRelayBoundedQuota(task.PrivateData.TokenId, actualQuota)
+	if err != nil {
+		logger.LogError(ctx, fmt.Sprintf("failed to check task quota cap %s: %v", task.TaskID, err))
+		return
+	}
+	actualQuota = bounded
 	if actualQuota < 0 {
 		return
 	}
