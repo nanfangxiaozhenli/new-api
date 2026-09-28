@@ -138,9 +138,13 @@ func CompleteCanvasRelay(tokenID int, state string) error {
 	return DB.Model(&CanvasRelayDelegation{}).Where("token_id = ? AND state = ?", tokenID, CanvasRelayUnknown).Update("state", state).Error
 }
 
-func InsertCanvasRelayTask(ctx context.Context, tokenID int, task *Task) error {
+func InsertCanvasRelayTask(ctx context.Context, tokenID int, task *Task, omitColumns ...string) error {
 	return DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(task).Error; err != nil {
+		insert := tx
+		if len(omitColumns) > 0 {
+			insert = insert.Omit(omitColumns...)
+		}
+		if err := insert.Create(task).Error; err != nil {
 			return err
 		}
 		result := tx.Model(&CanvasRelayDelegation{}).

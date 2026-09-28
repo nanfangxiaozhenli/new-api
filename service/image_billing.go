@@ -18,7 +18,7 @@ import (
 // PrepareImageBillingForRequest reserves the effective outbound image quantity
 // before each attempt, including channel retries and parameter overrides. The
 // client request body stays frozen; only the independent quantity is refreshed.
-func PrepareImageBillingForRequest(c *gin.Context, info *relaycommon.RelayInfo, count int, promptExtend bool) *types.NewAPIError {
+func PrepareImageBillingForRequest(c *gin.Context, info *relaycommon.RelayInfo, count int, promptExtendArgs ...bool) *types.NewAPIError {
 	if count < 1 || count > dto.MaxImageN {
 		return types.NewErrorWithStatusCode(fmt.Errorf("image_count must be an integer between 1 and %d", dto.MaxImageN), types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 	}
@@ -42,6 +42,9 @@ func PrepareImageBillingForRequest(c *gin.Context, info *relaycommon.RelayInfo, 
 			return types.NewErrorWithStatusCode(runErr, types.ErrorCodeModelPriceError, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 		}
 		beforeGroup := cost / 1_000_000 * snap.QuotaPerUnit
+		if trace.BillingUnit != billingexpr.BillingUnitRequest && snap.PreConsumeMultiplier != 0 {
+			beforeGroup *= snap.PreConsumeMultiplier
+		}
 		quota, err = billingexpr.QuotaRoundStrict(beforeGroup * info.PriceData.GroupRatioInfo.GroupRatio)
 		if err == nil {
 			snap.EstimatedImageCount = trace.ImageCount
@@ -60,6 +63,7 @@ func PrepareImageBillingForRequest(c *gin.Context, info *relaycommon.RelayInfo, 
 		// Overwrite per-attempt ratios so a failed Ali attempt cannot leak its
 		// quantity or prompt-extension surcharge into another channel.
 		info.PriceData.AddOtherRatio("n", float64(quantity))
+		promptExtend := len(promptExtendArgs) > 0 && promptExtendArgs[0]
 		extensionRatio := 1.0
 		if info.ChannelType == constant.ChannelTypeAli && strings.Contains(info.UpstreamModelName, "z-image") && promptExtend {
 			extensionRatio = common.ZImagePromptExtendMultiplier
